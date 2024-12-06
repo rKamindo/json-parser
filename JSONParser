@@ -1,0 +1,172 @@
+import re
+
+class JSONParser:
+    
+    # constructor 
+    def __init__(self, text):
+        self.text = text.strip()
+        self.index = 0
+
+    # method to consume white space to get to the next character
+    def consume_whitespace(self):
+        while self.index < len(self.text) and self.text[self.index] in " \t\n\r":
+            self.index += 1
+
+    # method to find a match for the expression that is passed 
+    def match(self, pattern):
+        print("match")
+        self.consume_whitespace()
+        match = re.match(pattern, self.text[self.index:])
+        if match:
+            value = match.group(0)
+            self.index += len(value)
+            return value
+        return None
+
+    # begins the recursive parsing, and will print the valid statement upon completion
+    def parse(self):
+        try:
+            self.consume_whitespace()
+            self.parse_value()
+            self.consume_whitespace()
+            if self.index == len(self.text):
+                print("yes, this is a valid JSON")
+            else:
+                print("no, this is not a valid JSON")
+        except ValueError:
+            print("no, this is not a valid JSON")
+
+    # finds the next character of the input. 
+    # calls parse_object, if the character specifies an object is beginning ('{')
+    # calls parse_array, if the character specifies an array is beginning ('[')
+    # calls parse_string, if the character specifies a string is beginning ('"')
+    # calls parse_number, if there is a number
+    # if the text remaining starts with a boolean or null value, then it will parse forward that many characters
+    # if none of these conditions are fulfilled, then it will print the invalid value and raise a ValueError to exit the code
+    def parse_value(self):
+        print("parse_value")
+        self.consume_whitespace()
+        if self.index < len(self.text) and self.text[self.index] == "{":
+            self.parse_object()
+        elif self.index < len(self.text) and self.text[self.index] == "[":
+            self.parse_array()
+        elif self.index < len(self.text) and self.text[self.index] == "\"":
+            self.parse_string()
+        elif self.index < len(self.text) and self.text[self.index] in "-0123456789":
+            self.parse_number()
+        elif self.text.startswith("true", self.index):
+            self.index += 4
+        elif self.text.startswith("false", self.index):
+            self.index += 5
+        elif self.text.startswith("null", self.index):
+            self.index += 4
+        else:
+            print(f"Invalid value at {self.index}: {self.text[self.index:]}")
+            raise ValueError(f"Invalid value at {self.index}: {self.text[self.index:]}")
+
+    # if we have found an opening curly bracket, then we will call parse_object
+    # first we will check that we do have a curly bracket to begin
+    # next, find the length of the object, by finding the closing curly bracket 
+    def parse_object(self):
+        print("parse_object")
+        self.match(r"\{")
+        self.consume_whitespace()
+        if self.index < len(self.text) and self.text[self.index] == "}":
+            self.index += 1
+            return
+        
+        # we will stay in this while loop until an invalid statement (ValueError) is thrown, or we find the closing curly bracket
+        # here, we expect to parse a string first, so we will call that method
+        while True:
+            self.parse_string()
+            self.consume_whitespace()
+
+            # we expect a ":" after a string, because JSON is in string : value pairs 
+            # if that is not the next character, then there is an error
+            if not self.match(":"):
+                print(f"Expected ':' after key in object at {self.index}")
+                raise ValueError(f"Expected ':' after key in object at {self.index}")
+            
+            # parse the value next (this is calling the method that we are already in -- recursion)
+            self.parse_value()
+            self.consume_whitespace()
+            if self.index < len(self.text) and self.text[self.index] == "}":
+                self.index += 1
+                break
+            if not self.match(","):
+                print(f"Expected ',' between key-value pairs at {self.index}")
+                raise ValueError(f"Expected ',' between key-value pairs at {self.index}")
+
+    # method to parse an array 
+    # begin by matching our opening bracket to double check that we are starting an array 
+    # next, find the length of the array, by counting the indecies between the brackets 
+    def parse_array(self):
+        print("parse_array")
+        self.match(r"\[")
+        self.consume_whitespace()
+        if self.index < len(self.text) and self.text[self.index] == "]":
+            self.index += 1
+            return
+        
+        # stay in while loop until all items in the array have been parsed 
+        while True:
+            self.parse_value()  # continue recursive call for items in the array 
+            self.consume_whitespace()
+            if self.index < len(self.text) and self.text[self.index] == "]":
+                self.index += 1
+                break
+
+            # we expect items in an array to be broken up by commas
+            # if there is not a comma, we have an invalid JSON object
+            if not self.match(","):
+                print(f"Expected ',' between array elements at {self.index}")
+                raise ValueError(f"Expected ',' between array elements at {self.index}")
+
+    # method to parse a string
+    # begin by matching our opening string quotes to double check that it is a string
+    # next, make sure there is a valid string, then move past the closing quote
+    # print the invalid statement and raise ValueError if there is an error in the string
+    def parse_string(self):
+        print("parse_string")
+        self.match(r"\"")
+        string_match = re.match(r"[^\"]*", self.text[self.index:]) # checks for zero or more characters that are not the double quote
+        if string_match:
+            self.index += len(string_match.group(0)) + 1  # move past the closing quote
+        else:
+            print(f"Invalid string at {self.index}")
+            raise ValueError(f"Invalid string at {self.index}")
+
+    # method to parse a number
+    # checks to make sure there is a valid number or decimal number
+    # if not, it is an invalid JSON and a ValueError is raised 
+    def parse_number(self):
+        print("parse_number")
+        number_match = self.match(r"-?\d+(\.\d+)?")
+        if not number_match:
+            print(f"Invalid number at {self.index}")
+            raise ValueError(f"Invalid number at {self.index}")
+    
+
+# testing examples
+if __name__ == "__main__":
+
+    with open('input.txt', 'r') as file:
+        multi_line_object = file.read()
+
+    # create an array of testing JSONs
+    test_jsons = [
+        # '{"key": [1, 2, 3], "boolean": true, "null_value": null}',  # Valid
+        # '{"name": "ChatGPT", "age": 4, "attributes": {"intelligent": true}}',  # Valid
+        # '{"missing": "comma" "oops"}',  # Invalid
+        # '{"unclosed": {"nested": [1, 2, 3}',  # Invalid
+        # '"hello"',
+        # '"hi", [6]',
+    ]
+
+    test_jsons.append(multi_line_object)
+    # parse each JSON in the array
+    for i, json_text in enumerate(test_jsons):
+        print(f"Test case {i + 1}:")
+        parser = JSONParser(json_text)
+        parser.parse()
+        print()
